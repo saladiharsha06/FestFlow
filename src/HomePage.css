@@ -1,0 +1,90 @@
+.festflow-home{min-height:100vh;width:100%;overflow-x:hidden;background:#fff5e8;position:relative;isolation:isolate;color:#2a2020}
+.festflow-home-reference{position:relative;width:100%;max-width:1536px;margin:0 auto;line-height:0;overflow:hidden}
+.festflow-home-artwork{display:block;width:100%;height:auto;user-select:none;transition:filter .35s ease}
+.festflow-home-hotspots{position:absolute;inset:0;pointer-events:none}
+.ff-hotspot{position:absolute;display:block;padding:0;border:0;border-radius:8px;background:transparent;cursor:pointer;pointer-events:auto;transform-origin:center;transition:transform .26s cubic-bezier(.2,.8,.2,1),box-shadow .26s ease,background-color .26s ease,border-color .26s ease;outline-offset:3px}
+.ff-hotspot:focus-visible{outline:3px solid #7f1d2d;outline-offset:2px;background:rgb(255 255 255 / 18%)}
+@media(hover:hover) and (pointer:fine){
+ .ff-nav-hit{border-radius:5px}
+ .ff-nav-hit::after{content:"";position:absolute;left:18%;right:18%;bottom:5%;height:2px;border-radius:2px;background:#8f202b;transform:scaleX(0);transform-origin:center;transition:transform .24s ease}
+ .ff-nav-hit:hover{background:rgb(143 32 43 / 7%);transform:translateY(-2px)}
+ .ff-nav-hit:hover::after{transform:scaleX(1)}
+ .ff-button-hit{overflow:hidden}
+ .ff-button-hit::after{content:"";position:absolute;inset:-20% auto -20% -55%;width:35%;background:linear-gradient(100deg,transparent,rgb(255 242 214 / 62%),transparent);transform:translateX(-150%) skewX(-18deg);transition:transform .58s cubic-bezier(.2,.8,.2,1);pointer-events:none}
+ .ff-button-hit:hover{transform:translateY(-2px) scale(1.018);box-shadow:0 7px 20px rgb(111 23 29 / 17%),0 0 0 1px rgb(255 245 232 / 72%);background-color:rgb(255 255 255 / 7%)}
+ .ff-button-hit:hover::after{transform:translateX(520%) skewX(-18deg)}
+ .ff-button-hit:active{transform:translateY(0) scale(.99);transition-duration:.1s}
+ .ff-card-hit{border:1px solid transparent;border-radius:13px}
+ .ff-card-hit:hover{transform:translateY(-5px) scale(1.012);border-color:rgb(150 54 38 / 35%);background:rgb(255 248 235 / 15%);box-shadow:0 10px 22px rgb(92 42 29 / 14%),0 0 0 1px rgb(255 255 255 / 80%)}
+ .ff-card-hit:active{transform:translateY(-1px) scale(1.003)}
+ .ff-hero-image-hit{border-radius:18px}
+ .ff-hero-image-hit:hover{background:radial-gradient(ellipse at 55% 55%,rgb(255 255 255 / 8%),transparent 68%);box-shadow:inset 0 0 0 1px rgb(255 248 232 / 55%)}
+}
+.ff-home-link{left:43.3%;top:2.2%;width:3.2%;height:4.3%}.ff-features-link{left:48.2%;top:2.2%;width:4.3%;height:4.3%}.ff-how-link{left:54.1%;top:2.2%;width:6.3%;height:4.3%}.ff-about-link{left:62.7%;top:2.2%;width:4.2%;height:4.3%}.ff-contact-link{left:67.5%;top:2.2%;width:5.2%;height:4.3%}.ff-header-login{left:73.8%;top:2.2%;width:6.4%;height:4.3%}.ff-header-create{left:81.3%;top:2.2%;width:13.3%;height:4.3%}.ff-hero-create{left:10.4%;top:35.5%;width:19.2%;height:4.8%}.ff-hero-login{left:30.8%;top:35.5%;width:10.8%;height:4.8%}.ff-footer-create{left:68%;top:90%;width:14.2%;height:4%}
+.ff-hero-image-hit{left:45.2%;top:15%;width:52%;height:49%}.ff-ganesh-card-hit{left:6.3%;top:68.5%;width:14.1%;height:14.5%}.ff-navratri-card-hit{left:21.1%;top:68.5%;width:14.1%;height:14.5%}.ff-diwali-card-hit{left:35.9%;top:68.5%;width:14.1%;height:14.5%}.ff-dussehra-card-hit{left:50.7%;top:68.5%;width:14.1%;height:14.5%}.ff-ugadi-card-hit{left:65.5%;top:68.5%;width:14.1%;height:14.5%}
+.ff-mobile-home{display:none}
+@media(max-width:700px){
+ .ff-desktop-home{display:none}
+ .ff-mobile-home{display:block;max-width:680px;margin:0 auto;padding:0 18px 22px}
+ .festflow-home{min-height:100%;background:#fff5e8}
+ .ff-mobile-header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:17px 0 13px;border-bottom:1px solid #ecd9c7}
+ .ff-mobile-brand{display:flex;align-items:center;gap:8px;color:#7f2025;text-decoration:none;min-width:0}
+ .ff-brand-mark{display:grid;place-items:center;flex:0 0 34px;height:34px;border-radius:10px;background:#8c2028;color:#fff5e8;font-size:23px}
+ .ff-mobile-brand strong{display:block;font-family:Georgia,serif;font-size:24px;line-height:1.05;letter-spacing:-.5px}
+ .ff-mobile-brand small{display:block;margin-top:3px;font-size:9px;line-height:1.2;color:#6f514b;max-width:210px}
+ .ff-mobile-login,.ff-secondary-button{border:1px solid #8c2028;background:transparent;color:#7f2025;border-radius:10px;padding:10px 14px;font-size:13px;font-weight:650;white-space:nowrap;cursor:pointer}
+ .ff-mobile-nav{display:flex;gap:7px;overflow-x:auto;padding:12px 0 15px;scrollbar-width:none}
+ .ff-mobile-nav::-webkit-scrollbar{display:none}
+ .ff-mobile-nav button{flex:0 0 auto;border:0;border-radius:999px;background:#f4e4d5;color:#6e2628;padding:9px 12px;font-size:12px;cursor:pointer}
+ .ff-mobile-hero{padding:20px 0 26px}
+ .ff-eyebrow{margin:0 0 9px;color:#9b3929;font-size:10px;letter-spacing:2px;font-weight:750;line-height:1.5}
+ .ff-mobile-hero h1{margin:0;color:#211c1c;font-family:Georgia,'Times New Roman',serif;font-size:clamp(34px,9vw,49px);letter-spacing:-1.3px;line-height:1.02}
+ .ff-mobile-hero h1 em{color:#8c2028;font-style:normal}
+ .ff-hero-copy{margin:15px 0 19px;color:#514849;font-size:15px;line-height:1.55}
+ .ff-mobile-actions{display:grid;grid-template-columns:1fr;gap:10px;max-width:360px}
+ .ff-primary-button{display:inline-flex;align-items:center;justify-content:center;gap:12px;min-height:46px;padding:12px 17px;border:1px solid #9c2d2d;border-radius:11px;background:linear-gradient(115deg,#a51e36,#762029);color:white;font-size:14px;font-weight:700;box-shadow:0 5px 14px rgb(116 30 36 / 15%);cursor:pointer;transition:transform .2s ease,box-shadow .2s ease}
+ .ff-primary-button:active,.ff-mobile-login:active,.ff-secondary-button:active{transform:scale(.985)}
+ .ff-mobile-hero-image{margin-top:23px;border:1px solid #ecd7c2;border-radius:17px;overflow:hidden;background:#f8ead9;box-shadow:0 8px 24px rgb(94 48 30 / 9%)}
+ .ff-mobile-hero-image img{display:block;width:100%;height:clamp(170px,53vw,280px);object-fit:cover;object-position:center 40%;background:linear-gradient(135deg,#ead4b9,#a84b2e)}
+ .ff-image-caption{display:flex;flex-direction:column;gap:4px;padding:13px 14px 15px;line-height:1.4}
+ .ff-image-caption strong{color:#782126;font-family:Georgia,serif;font-size:18px}
+ .ff-image-caption span{color:#67534e;font-size:12px}
+ .ff-mobile-features,.ff-mobile-festivals{padding:25px 0 28px;border-top:1px solid #ecd9c7;scroll-margin-top:12px}
+ .ff-mobile-features h2,.ff-mobile-festivals h2,.ff-mobile-about h2{margin:0 0 17px;color:#7f2025;font-family:Georgia,serif;font-size:clamp(25px,6vw,32px);line-height:1.12;letter-spacing:-.4px}
+ .ff-feature-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+ .ff-feature-item{min-width:0;padding:14px 12px;border:1px solid #efdfcd;border-radius:13px;background:#fffaf3;transition:transform .22s ease,box-shadow .22s ease}
+ .ff-feature-item>span{display:grid;place-items:center;width:32px;height:32px;border-radius:10px;background:#f8e5d1;color:#a93e26;font-size:20px;font-weight:700}
+ .ff-feature-item h3{margin:10px 0 5px;color:#56252a;font-size:13px;line-height:1.25}
+ .ff-feature-item p{margin:0;color:#6b5b57;font-size:11px;line-height:1.45}
+ .ff-festival-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+ .ff-festival-card{min-width:0;overflow:hidden;border:1px solid #ecd9c7;border-radius:13px;background:#fffaf3;box-shadow:0 4px 12px rgb(91 49 31 / 6%);transition:transform .22s ease,box-shadow .22s ease}
+ .ff-festival-card img{display:block;width:100%;height:112px;object-fit:cover;background:#f1dfcd}
+ .ff-festival-card>div{display:flex;flex-direction:column;gap:5px;padding:10px;line-height:1.3}
+ .ff-festival-card strong{color:#782126;font-size:13px}
+ .ff-festival-card small{color:#6b5751;font-size:10px;line-height:1.35}
+ .ff-mobile-about{padding:24px 18px;margin:2px -2px 22px;border-radius:17px;background:#f1dfcf;scroll-margin-top:12px}
+ .ff-mobile-about p:not(.ff-eyebrow){color:#5d4b47;font-size:13px;line-height:1.55}
+ .ff-mobile-about .ff-primary-button{width:100%;margin-top:5px}
+ .ff-mobile-footer{display:flex;flex-direction:column;align-items:flex-start;gap:7px;padding:19px 0 5px;border-top:1px solid #e5cdbc;color:#782126}
+ .ff-mobile-footer strong{font-family:Georgia,serif;font-size:23px}
+ .ff-mobile-footer span{font-size:10px;color:#6c5650}
+ .ff-mobile-footer button{margin-top:4px;border:0;background:none;color:#8c2028;text-decoration:underline;padding:5px 0;cursor:pointer}
+}
+@media(min-width:701px){.ff-mobile-home{display:none}}
+@media(hover:hover) and (pointer:fine){
+ .ff-mobile-nav button:hover,.ff-mobile-login:hover,.ff-secondary-button:hover{background:#f3e2d2;transform:translateY(-1px)}
+ .ff-primary-button:hover{transform:translateY(-2px);box-shadow:0 8px 18px rgb(116 30 36 / 22%)}
+ .ff-feature-item:hover,.ff-festival-card:hover{transform:translateY(-3px);box-shadow:0 9px 20px rgb(91 49 31 / 12%)}
+ .ff-festival-card img{transition:transform .3s ease}
+ .ff-festival-card:hover img{transform:scale(1.035)}
+}
+@media(max-width:360px){
+ .ff-mobile-home{padding-left:13px;padding-right:13px}
+ .ff-mobile-header{gap:6px}
+ .ff-mobile-brand strong{font-size:22px}
+ .ff-mobile-brand small{font-size:8px;max-width:175px}
+ .ff-mobile-login{padding:9px 10px}
+ .ff-mobile-hero h1{font-size:34px}
+ .ff-festival-card img{height:95px}
+}
+@media(prefers-reduced-motion:reduce){.ff-hotspot,.festflow-home-artwork,.ff-hotspot::after,.ff-mobile-home *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}

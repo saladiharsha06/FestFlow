@@ -69,62 +69,110 @@ const materialFromDb = (row) => ({
 
 function App() {
   const [loggedIn, setLoggedIn] = useState(false);
+  const [showLanding, setShowLanding] = useState(true);
+  const [forcePublicHome, setForcePublicHome] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [registerEmail, setRegisterEmail] = useState("");
+  const [isRegistering, setIsRegistering] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [requestRecoveryMode, setRequestRecoveryMode] = useState(false);
+  const [recoveryEmail, setRecoveryEmail] = useState("");
+  const [recoveryEmailSent, setRecoveryEmailSent] = useState(false);
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [userRole, setUserRole] = useState("");
   const [currentUserId, setCurrentUserId] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   const [authChecking, setAuthChecking] = useState(true);
   const [loginError, setLoginError] = useState("");
+  const [committeeMessage, setCommitteeMessage] = useState("");
+  const [myCommittees, setMyCommittees] = useState([]);
+  const [activeCommitteeId, setActiveCommitteeId] = useState("");
+  const [committeeName, setCommitteeName] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
+  const [committeeLoading, setCommitteeLoading] = useState(false);
+  const [membersForCommittee, setMembersForCommittee] = useState("");
+  const [committeeMembers, setCommitteeMembers] = useState([]);
+  const [membersLoading, setMembersLoading] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
+    let restoreRequest = 0;
 
     async function restoreSession(session) {
-      if (!session?.user) {
-        if (isMounted) {
+      const requestId = ++restoreRequest;
+      try {
+        if (!session?.user) {
+          if (isMounted && requestId === restoreRequest) {
+            setLoggedIn(false);
+            setUserRole("");
+            setCurrentUserId("");
+            setAuthChecking(false);
+          }
+          return;
+        }
+
+        const { data: role, error: roleError } = await supabase.rpc("get_my_role");
+        if (!isMounted || requestId !== restoreRequest) return;
+
+        if (roleError) {
+          setLoginError("Unable to verify your account. Please log in again.");
+          setLoggedIn(false);
+          setUserRole("");
+          setCurrentUserId("");
+          setAuthChecking(false);
+          return;
+        }
+
+        // Accounts without a legacy admin/collector role are regular members.
+        setUsername(session.user.user_metadata?.username || "");
+        setUserRole(["admin", "collector"].includes(role) ? role : "member");
+        setCurrentUserId(session.user.id);
+        setLoggedIn(true);
+        // Do not reset the selected screen when Supabase restores or refreshes a session.
+        // This keeps the user inside the open community when returning to the browser tab.
+        setLoginError("");
+        setAuthChecking(false);
+      } catch (error) {
+        if (isMounted && requestId === restoreRequest) {
+          console.error("FestFlow session restore error:", error);
+          setLoginError("Unable to restore your session. Please log in again.");
           setLoggedIn(false);
           setUserRole("");
           setCurrentUserId("");
           setAuthChecking(false);
         }
-        return;
       }
-
-      const { data, error } = await supabase.rpc("get_my_role");
-      if (!isMounted) return;
-
-      if (error || !["admin", "collector"].includes(data)) {
-        await supabase.auth.signOut();
-        setLoggedIn(false);
-        setUserRole("");
-        setCurrentUserId("");
-        setLoginError("Your account does not have an authorized app role. Please contact the administrator.");
-      } else {
-        setUsername(session.user.email || "");
-        setUserRole(data);
-        setCurrentUserId(session.user.id);
-        setLoggedIn(true);
-        setLoginError("");
-      }
-      setAuthChecking(false);
     }
 
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      // Supabase emits PASSWORD_RECOVERY when a user opens a valid reset link.
+      if (event === "PASSWORD_RECOVERY") {
+        setRecoveryMode(true);
+        setLoginError("");
+        setAuthChecking(false);
+      }
+      // Ignore stale async results if Supabase emits multiple session events.
+      Promise.resolve().then(() => restoreSession(session));
+    });
+
     supabase.auth.getSession().then(({ data, error }) => {
+      if (!isMounted) return;
       if (error) {
-        if (isMounted) {
-          setLoginError("Unable to check your session. Please refresh and try again.");
-          setAuthChecking(false);
-        }
+        setLoginError("Unable to check your session. Please refresh and try again.");
+        setAuthChecking(false);
         return;
       }
       restoreSession(data.session);
-    });
-
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      // Defer the role lookup so the auth callback does not block Supabase's auth lock.
-      Promise.resolve().then(() => restoreSession(session));
+    }).catch((error) => {
+      if (isMounted) {
+        console.error("FestFlow getSession error:", error);
+        setLoginError("Unable to check your session. Please refresh and try again.");
+        setAuthChecking(false);
+      }
     });
 
     return () => {
@@ -202,11 +250,42 @@ function App() {
   ].length;
 
 
+  // Dashboard metrics are calculated from saved Supabase records (not demo values).
+  const allMoneyRecords = [...collections, ...personal1, ...personal2];
+  const uniqueDonorCount = new Set(
+    allMoneyRecords.map((record) => String(record.name || "").trim().toLowerCase()).filter(Boolean)
+  ).size;
+  const recentMoneyRecords = [...allMoneyRecords]
+    .sort((a, b) => `${b.date || ""} ${b.time || ""}`.localeCompare(`${a.date || ""} ${a.time || ""}`))
+    .slice(0, 5);
+  const recentMaterialRecords = [...materialDonations]
+    .sort((a, b) => `${b.date || ""} ${b.time || ""}`.localeCompare(`${a.date || ""} ${a.time || ""}`))
+    .slice(0, 5);
+  const donorTotals = Object.values(allMoneyRecords.reduce((totals, record) => {
+    const key = String(record.name || "").trim();
+    if (!key) return totals;
+    if (!totals[key]) totals[key] = { name: key, amount: 0 };
+    totals[key].amount += Number(record.amount || 0);
+    return totals;
+  }, {})).sort((a, b) => b.amount - a.amount).slice(0, 5);
+  const monthlyTotals = Array.from({ length: 12 }, (_, month) => {
+    const amount = allMoneyRecords.reduce((sum, record) => {
+      if (!record.date) return sum;
+      const date = new Date(`${record.date}T12:00:00`);
+      return date.getFullYear() === new Date().getFullYear() && date.getMonth() === month
+        ? sum + Number(record.amount || 0)
+        : sum;
+    }, 0);
+    return { month: new Date(2000, month, 1).toLocaleString("en-IN", { month: "short" }), amount };
+  });
+  const maxMonthlyTotal = Math.max(...monthlyTotals.map((item) => item.amount), 1);
+
+
   const [dataLoading, setDataLoading] = useState(false);
   const [dataError, setDataError] = useState("");
 
   useEffect(() => {
-    if (!loggedIn) return;
+    if (!loggedIn || !activeCommitteeId) return;
     let cancelled = false;
     async function loadCollections() {
       setDataLoading(true);
@@ -214,7 +293,7 @@ function App() {
       try {
         const names = ["money", "personal1", "personal2", "materials"];
         const results = await Promise.all(names.map((key) =>
-          supabase.from(TABLES[key]).select("*").order(key === "materials" ? "donation_date" : "collection_date", { ascending: false }).order("created_at", { ascending: false })
+          supabase.from(TABLES[key]).select("*").eq("committee_id", activeCommitteeId).order(key === "materials" ? "donation_date" : "collection_date", { ascending: false }).order("created_at", { ascending: false })
         ));
         const failed = results.find((result) => result.error);
         if (failed) throw failed.error;
@@ -231,41 +310,346 @@ function App() {
     }
     loadCollections();
     return () => { cancelled = true; };
-  }, [loggedIn]);
+  }, [loggedIn, activeCommitteeId]);
+
+  useEffect(() => {
+    if (!loggedIn) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.rpc("get_my_committees");
+      if (cancelled) return;
+      if (error) {
+        setLoginError("Could not load your committees. Please refresh and try again.");
+        return;
+      }
+      setMyCommittees(Array.isArray(data) ? data : []);
+    })();
+    return () => { cancelled = true; };
+  }, [loggedIn, userRole]);
+
+  async function refreshMyCommittees() {
+    const { data, error } = await supabase.rpc("get_my_committees");
+    if (error) throw error;
+    setMyCommittees(Array.isArray(data) ? data : []);
+  }
+
+  async function handleViewCommitteeMembers(committee) {
+    if (membersForCommittee === committee.id) {
+      setMembersForCommittee("");
+      setCommitteeMembers([]);
+      return;
+    }
+
+    setMembersLoading(true);
+    setLoginError("");
+    setCommitteeMessage("");
+    try {
+      const { data, error } = await supabase.rpc("get_committee_members", {
+        p_committee_id: committee.id,
+      });
+      if (error) throw error;
+      setCommitteeMembers(Array.isArray(data) ? data : []);
+      setMembersForCommittee(committee.id);
+    } catch (error) {
+      setLoginError(error?.message || "Could not load community members.");
+    } finally {
+      setMembersLoading(false);
+    }
+  }
+
+  async function handleRemoveCommitteeMember(committee, member) {
+    if (member.is_owner) {
+      setLoginError("The community owner cannot be removed.");
+      return;
+    }
+
+    const memberName = member.username || "this member";
+    const confirmed = window.confirm(
+      `Remove ${memberName} from ${committee.name}? They will lose access to this community's records, but existing records will not be deleted.`
+    );
+    if (!confirmed) return;
+
+    setMembersLoading(true);
+    setLoginError("");
+    setCommitteeMessage("");
+    try {
+      const { error } = await supabase.rpc("remove_committee_member", {
+        p_committee_id: committee.id,
+        p_user_id: member.user_id,
+      });
+      if (error) throw error;
+
+      setCommitteeMembers((previous) =>
+        previous.filter((item) => item.user_id !== member.user_id)
+      );
+      setCommitteeMessage(`${memberName} was removed from ${committee.name}. Their existing records were not deleted.`);
+    } catch (error) {
+      setLoginError(error?.message || "Could not remove this community member.");
+    } finally {
+      setMembersLoading(false);
+    }
+  }
+
+  async function handleCreateCommittee(event) {
+    event.preventDefault();
+    const name = committeeName.trim();
+    if (!name) return;
+    setCommitteeLoading(true);
+    setLoginError("");
+    try {
+      const { error } = await supabase.rpc("create_committee", { p_name: name });
+      if (error) throw error;
+      setCommitteeName("");
+      await refreshMyCommittees();
+    } catch (error) {
+      setLoginError(error.message || "Could not create the committee.");
+    } finally {
+      setCommitteeLoading(false);
+    }
+  }
+
+  async function handleCopyInviteCode(code) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(code);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = code;
+        textArea.setAttribute("readonly", "");
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.select();
+        const copied = document.execCommand("copy");
+        document.body.removeChild(textArea);
+        if (!copied) throw new Error("Clipboard access was blocked by the browser.");
+      }
+      setLoginError("");
+      setCommitteeMessage(`Invitation code ${code} copied. Share it with the people you want to invite.`);
+    } catch (error) {
+      setCommitteeMessage("");
+      setLoginError(`Could not copy the invitation code. Please select and copy it manually. ${error?.message || ""}`.trim());
+    }
+  }
+
+  async function handleShareInvitation(committee) {
+    const invitationText = `Join my FestFlow community: ${committee.name}\nInvitation code: ${committee.invite_code}\nOpen FestFlow and enter this code to join.`;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: `Join ${committee.name} on FestFlow`,
+          text: invitationText,
+        });
+        setLoginError("");
+        setCommitteeMessage(`Invitation for ${committee.name} shared successfully.`);
+        return;
+      }
+
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(invitationText);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = invitationText;
+        textArea.setAttribute("readonly", "");
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.select();
+        const copied = document.execCommand("copy");
+        document.body.removeChild(textArea);
+        if (!copied) throw new Error("Clipboard access was blocked by the browser.");
+      }
+
+      setLoginError("");
+      setCommitteeMessage("Invitation details copied. Paste them into a message to share with your committee members.");
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      setCommitteeMessage("");
+      setLoginError(`Could not share the invitation. Please use Copy invitation code instead. ${error?.message || ""}`.trim());
+    }
+  }
+
+  async function handleJoinCommittee(event) {
+    event.preventDefault();
+    const code = inviteCode.trim().toUpperCase();
+    if (!code) {
+      setLoginError("Enter an invitation code first.");
+      return;
+    }
+
+    setCommitteeLoading(true);
+    setLoginError("");
+    setCommitteeMessage("");
+
+    try {
+      const { data, error } = await supabase.rpc("join_committee", {
+        p_invite_code: code,
+      });
+
+      if (error) throw error;
+      if (!data?.committee_id) {
+        throw new Error("The server did not confirm which community was joined. Please try again.");
+      }
+
+      const wasAlreadyMember = myCommittees.some(
+        (committee) => committee.id === data.committee_id
+      );
+
+      await refreshMyCommittees();
+      setInviteCode("");
+
+      setCommitteeMessage(
+        wasAlreadyMember
+          ? `You're already a member of "${data.committee_name}". Select "Open this community" above to enter it.`
+          : `Successfully joined "${data.committee_name}"! You can now open it from Your communities.`
+      );
+    } catch (error) {
+      console.error("FestFlow join community error:", error);
+      setLoginError(error?.message || "Could not join the community. Check the invitation code and try again.");
+    } finally {
+      setCommitteeLoading(false);
+    }
+  }
+
+  async function handleRequestPasswordReset(event) {
+    event.preventDefault();
+    setLoginError("");
+    const email = recoveryEmail.trim().toLowerCase();
+    if (!email) {
+      setLoginError("Enter the email address you used when creating your FestFlow account.");
+      return;
+    }
+
+    setRecoveryLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/`,
+      });
+      if (error) throw error;
+      setRecoveryEmailSent(true);
+    } catch (error) {
+      console.error("FestFlow password reset request error:", error);
+      setLoginError(error?.message || "Could not send the password-reset email. Please try again.");
+    } finally {
+      setRecoveryLoading(false);
+    }
+  }
+
+  async function handleUpdatePassword(event) {
+    event.preventDefault();
+    setLoginError("");
+    if (newPassword.length < 8) {
+      setLoginError("Your new password must contain at least 8 characters.");
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setLoginError("The new passwords do not match.");
+      return;
+    }
+
+    setRecoveryLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      await supabase.auth.signOut();
+      setRecoveryMode(false);
+      setRequestRecoveryMode(false);
+      setRecoveryEmailSent(false);
+      setRecoveryEmail("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+      setPassword("");
+      setIsRegistering(false);
+      setLoggedIn(false);
+      setShowLanding(false);
+      setLoginError("Password updated successfully. Log in with your username and new password.");
+    } catch (error) {
+      console.error("FestFlow password update error:", error);
+      setLoginError(error?.message || "Could not update your password. Please open the latest reset email and try again.");
+    } finally {
+      setRecoveryLoading(false);
+    }
+  }
 
   async function handleLogin(event) {
     event.preventDefault();
     setLoginError("");
 
-    const email = username.trim();
-    if (!email || !password) {
-      setLoginError("Please enter your registered email and password.");
+    const loginUsername = username.trim().toLowerCase();
+    if (!loginUsername || !password) {
+      setLoginError("Please enter your username and password.");
       return;
     }
 
     setLoginLoading(true);
     try {
-      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      // The Edge Function securely resolves the username to the account email.
+      const { data: loginData, error: loginFunctionError } = await supabase.functions.invoke(
+        "login-with-username",
+        { body: { username: loginUsername, password } }
+      );
 
-      if (signInError) throw signInError;
-
-      const { data: role, error: roleError } = await supabase.rpc("get_my_role");
-      if (roleError || !["admin", "collector"].includes(role)) {
-        await supabase.auth.signOut();
-        throw new Error("This account is not assigned an authorized admin or collector role.");
+      if (loginFunctionError) throw new Error("Login failed. Please check your username and password.");
+      if (!loginData?.access_token || !loginData?.refresh_token) {
+        throw new Error(loginData?.error || "Login failed. Please check your username and password.");
       }
 
-      setUsername(signInData.user?.email || email);
-      setUserRole(role);
-      setCurrentUserId(signInData.user.id);
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: loginData.access_token,
+        refresh_token: loginData.refresh_token,
+      });
+      if (sessionError) throw sessionError;
+
+      const { data: role, error: roleError } = await supabase.rpc("get_my_role");
+      if (roleError) throw new Error("Could not verify your account. Please try again.");
+
+      const { data: authData } = await supabase.auth.getUser();
+      setUserRole(["admin", "collector"].includes(role) ? role : "member");
+      setCurrentUserId(authData.user?.id || "");
       setLoggedIn(true);
-      setActiveScreen("dashboard");
+      setActiveCommitteeId("");
+      setActiveScreen("communities");
       setPassword("");
     } catch (error) {
-      setLoginError(error?.message || "Login failed. Please check your email and password.");
+      console.error("FestFlow login error:", error);
+      setLoginError(error?.message || "Login failed. Please check your username and password.");
+    } finally {
+      setLoginLoading(false);
+    }
+  }
+
+  async function handleRegister(event) {
+    event.preventDefault();
+    setLoginError("");
+
+    const chosenUsername = username.trim().toLowerCase();
+    const email = registerEmail.trim().toLowerCase();
+    if (!/^[a-z0-9_]{3,30}$/.test(chosenUsername)) {
+      setLoginError("Choose a username with 3–30 characters: lowercase letters, numbers, or underscores.");
+      return;
+    }
+    if (!email || !password || password.length < 8) {
+      setLoginError("Enter your email and a password with at least 8 characters.");
+      return;
+    }
+
+    setLoginLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        "register-with-username",
+        { body: { username: chosenUsername, email, password } }
+      );
+      if (error) throw new Error("Could not create your account. Please try again.");
+      if (data?.error) throw new Error(data.error);
+      setLoginError("");
+      setIsRegistering(false);
+      setUsername(chosenUsername);
+      setRegisterEmail("");
+      setPassword("");
+      alert("Account created successfully! You can now log in with your username and password.");
+    } catch (error) {
+      setLoginError(error?.message || "Registration failed. Please try again.");
     } finally {
       setLoginLoading(false);
     }
@@ -279,8 +663,10 @@ function App() {
       return;
     }
     setLoggedIn(false);
+    setShowLanding(true);
     setUserRole("");
     setCurrentUserId("");
+    setActiveCommitteeId("");
     setPassword("");
     setUsername("");
     setActiveScreen("dashboard");
@@ -324,6 +710,7 @@ function App() {
 
   async function handleSave(event) {
     event.preventDefault();
+    if (!activeCommitteeId) return alert("Please open a community first.");
     if (!formData.name.trim()) return alert("Please enter the donor name.");
     if (formData.amount === "" || !Number.isFinite(Number(formData.amount)) || Number(formData.amount) <= 0) return alert("Please enter a valid amount greater than zero.");
     if (!formData.date || !formData.time) return alert("Please select the date and time.");
@@ -340,8 +727,8 @@ function App() {
     };
     try {
       const result = editingId !== null
-        ? await supabase.from(table).update(payload).eq("id", editingId).select().single()
-        : await supabase.from(table).insert({ ...payload, created_by: authData.user.id }).select().single();
+        ? await supabase.from(table).update(payload).eq("id", editingId).eq("committee_id", activeCommitteeId).select().single()
+        : await supabase.from(table).insert({ ...payload, committee_id: activeCommitteeId, created_by: authData.user.id }).select().single();
       if (result.error) throw result.error;
       const saved = moneyFromDb(result.data);
       const setter = collectionSetters[formType];
@@ -360,7 +747,7 @@ function App() {
     if (userRole !== "admin") return alert("Only an administrator can delete records.");
     if (!window.confirm("Are you sure you want to permanently delete this collection record?")) return;
     try {
-      const { error } = await supabase.from(TABLES[type]).delete().eq("id", id);
+      const { error } = await supabase.from(TABLES[type]).delete().eq("id", id).eq("committee_id", activeCommitteeId);
       if (error) throw error;
       collectionSetters[type]((previous) => previous.filter((record) => record.id !== id));
       alert("Record deleted from the database.");
@@ -388,6 +775,7 @@ function App() {
 
   async function saveMaterialDonation(event) {
     event.preventDefault();
+    if (!activeCommitteeId) return alert("Please open a community first.");
     const quantity = Number(materialForm.quantity);
     if (!materialForm.donorName.trim() || !materialForm.item.trim() || !Number.isFinite(quantity) || quantity <= 0) return alert("Please enter the donor name, item name, and a quantity greater than zero.");
     if (!materialForm.date || !materialForm.time) return alert("Please select the date and time.");
@@ -401,8 +789,8 @@ function App() {
     };
     try {
       const result = editingMaterialId !== null
-        ? await supabase.from(TABLES.materials).update(payload).eq("id", editingMaterialId).select().single()
-        : await supabase.from(TABLES.materials).insert({ ...payload, created_by: authData.user.id }).select().single();
+        ? await supabase.from(TABLES.materials).update(payload).eq("id", editingMaterialId).eq("committee_id", activeCommitteeId).select().single()
+        : await supabase.from(TABLES.materials).insert({ ...payload, committee_id: activeCommitteeId, created_by: authData.user.id }).select().single();
       if (result.error) throw result.error;
       const saved = materialFromDb(result.data);
       setMaterialDonations((previous) => editingMaterialId !== null
@@ -417,7 +805,7 @@ function App() {
     if (userRole !== "admin") return alert("Only an administrator can delete records.");
     if (!window.confirm("Are you sure you want to permanently delete this material donation?")) return;
     try {
-      const { error } = await supabase.from(TABLES.materials).delete().eq("id", id);
+      const { error } = await supabase.from(TABLES.materials).delete().eq("id", id).eq("committee_id", activeCommitteeId);
       if (error) throw error;
       setMaterialDonations((previous) => previous.filter((record) => record.id !== id));
       alert("Material donation deleted from the database.");
@@ -1009,38 +1397,256 @@ function App() {
     );
   }
 
+  if (requestRecoveryMode && !recoveryMode && !loggedIn) {
+    return (
+      <main className="login-page auth-split-page">
+        <section className="login-card auth-form-card" style={{ margin: "auto" }}>
+          <button type="button" className="auth-mobile-home" onClick={() => { setRequestRecoveryMode(false); setRecoveryEmailSent(false); setLoginError(""); }}>← Back to Login</button>
+          <div className="login-logo">🌺</div>
+          <h1>Forgot Password?</h1>
+          {recoveryEmailSent ? (
+            <>
+              <p className="login-subtitle">If an account exists for that email, a password-reset link has been sent. Check your inbox and spam folder.</p>
+              <button type="button" className="login-button" onClick={() => { setRequestRecoveryMode(false); setRecoveryEmailSent(false); setLoginError(""); }}>Back to Login</button>
+            </>
+          ) : (
+            <>
+              <p className="login-subtitle">Enter the email address you used when creating your FestFlow account.</p>
+              <form onSubmit={handleRequestPasswordReset}>
+                <label>
+                  Registered email address
+                  <input type="email" autoComplete="email" value={recoveryEmail} onChange={(event) => setRecoveryEmail(event.target.value)} placeholder="Enter your registered email" required />
+                </label>
+                {loginError && <p className="login-error" role="alert">{loginError}</p>}
+                <button type="submit" className="login-button" disabled={recoveryLoading}>
+                  {recoveryLoading ? "Sending email…" : "Send Reset Link"}
+                </button>
+              </form>
+            </>
+          )}
+        </section>
+      </main>
+    );
+  }
+
+  if (recoveryMode) {
+    return (
+      <main className="login-page auth-split-page">
+        <section className="login-card auth-form-card" style={{ margin: "auto" }}>
+          <div className="login-logo">🌺</div>
+          <h1>Set a new password</h1>
+          <p className="login-subtitle">Choose a new password for your FestFlow account.</p>
+          <form onSubmit={handleUpdatePassword}>
+            <label>
+              New password
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+                minLength={8}
+                placeholder="Enter new password (8+ characters)"
+                required
+              />
+            </label>
+            <label>
+              Confirm new password
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={confirmNewPassword}
+                onChange={(event) => setConfirmNewPassword(event.target.value)}
+                minLength={8}
+                placeholder="Re-enter new password"
+                required
+              />
+            </label>
+            {loginError && <p className="login-error" role="alert">{loginError}</p>}
+            <button type="submit" className="login-button" disabled={recoveryLoading}>
+              {recoveryLoading ? "Updating password…" : "Update Password"}
+            </button>
+          </form>
+        </section>
+      </main>
+    );
+  }
+
+  if ((!loggedIn && showLanding) || forcePublicHome) {
+    const openLogin = () => {
+      setForcePublicHome(false);
+      setShowLanding(false);
+      setIsRegistering(false);
+      setLoginError("");
+      setShowLanding(false);
+    };
+    const openRegister = () => {
+      setForcePublicHome(false);
+      setShowLanding(false);
+      setIsRegistering(true);
+      setLoginError("");
+      setShowLanding(false);
+    };
+
+    return (
+      <main className="public-home">
+        <header className="public-nav">
+          <a className="public-brand" href="#home" aria-label="FestFlow home">
+            <img className="brand-image" src="/images/festflow-brand.png" alt="FestFlow — Every Community. Every Celebration. One Platform." />
+          </a>
+          <nav className="public-links" aria-label="Main navigation">
+            <a className="selected" href="#home">Home</a>
+            <a href="#features">Features</a>
+            <a href="#how-it-works">How It Works</a>
+            <a href="#about">About</a>
+            <a href="#contact">Contact</a>
+          </nav>
+          <div className="public-nav-actions">
+            <button className="public-login" onClick={openLogin}>Log In</button>
+            <button className="public-primary" onClick={openRegister}>Create Your Committee</button>
+          </div>
+        </header>
+
+        <section className="public-hero" id="home">
+          <div className="hero-copy">
+            <p className="hero-kicker">ORGANIZE&nbsp; · &nbsp;COLLECT&nbsp; · &nbsp;MANAGE&nbsp; · &nbsp;CELEBRATE</p>
+            <h1>Fest<span>Flow</span></h1>
+            <h2>Every Community. Every Celebration. One Platform.</h2>
+            <p className="hero-description">Manage your festival collections, organize your committee and keep your financial records in one secure place.</p>
+            <div className="hero-actions">
+              <button className="public-primary hero-create" onClick={openRegister}>Create Your Committee <span>→</span></button>
+              <button className="public-login hero-login" onClick={openLogin}>Log In</button>
+            </div>
+          </div>
+          <div className="festival-art" aria-hidden="true">
+            <img src="/images/festival-hero.png" alt="" />
+          </div>
+        </section>
+
+        <section className="feature-strip" id="features">
+          <article><span className="feature-icon coral">♟</span><strong>Multiple Festivals</strong><p>Use for any festival<br/>or community event</p></article>
+          <article><span className="feature-icon orange">₹</span><strong>Easy Collection</strong><p>Record monetary<br/>and material donations</p></article>
+          <article><span className="feature-icon green">✓</span><strong>Secure &amp; Private</strong><p>Your data stays safe<br/>and separate</p></article>
+          <article><span className="feature-icon purple">▥</span><strong>Reports &amp; Insights</strong><p>Get detailed reports<br/>anytime</p></article>
+          <article><span className="feature-icon amber">♟</span><strong>Manage Collectors</strong><p>Add and manage<br/>your team easily</p></article>
+          <article><span className="feature-icon violet">▣</span><strong>Accessible Anywhere</strong><p>Use on mobile,<br/>tablet or computer</p></article>
+        </section>
+
+        <section className="celebration-section" id="how-it-works">
+          <h2>Perfect for Every Community and Celebration</h2>
+          <p>From religious festivals to cultural events, FestFlow helps you manage your collections with transparency.</p>
+          <div className="celebration-grid">
+            <article><div className="category-art"><img src="/images/religious-festivals.png" alt="" /></div><strong>Religious Festivals</strong></article>
+            <article><div className="category-art"><img src="/images/community-events.png" alt="" /></div><strong>Community Events</strong></article>
+            <article><div className="category-art"><img src="/images/cultural-celebrations.png" alt="" /></div><strong>Cultural Celebrations</strong></article>
+            <article><div className="category-art"><img src="/images/temple-events.png" alt="" /></div><strong>Temple Events</strong></article>
+            <article><div className="category-art"><img src="/images/charity-drives.png" alt="" /></div><strong>Charity Drives</strong></article>
+            <article><div className="category-art"><img src="/images/other-events.png" alt="" /></div><strong>Others</strong></article>
+          </div>
+        </section>
+
+        <footer className="public-footer" id="about">
+          <div className="footer-promises">
+            <div><span>♟</span><strong>Trusted by<br/>Communities</strong></div>
+            <div><span>▤</span><strong>Simple &amp; Easy<br/>to Use</strong></div>
+            <div><span>▣</span><strong>Transparent<br/>Record Keeping</strong></div>
+            <div><span>♡</span><strong>Built for<br/>Stronger Communities</strong></div>
+          </div>
+          <div className="footer-cta" id="contact">
+            <small>READY TO GET STARTED?</small><h2>Create your committee today</h2><p>and manage your collections with confidence.</p>
+            <button className="public-primary" onClick={openRegister}>Create Your Committee <span>→</span></button>
+          </div>
+        </footer>
+      </main>
+    );
+  }
+
   if (!loggedIn) {
     return (
-      <main className="login-page">
-        <form className="login-card" onSubmit={handleLogin}>
-          <div className="login-logo">🎉</div>
-
+      <main className="login-page auth-split-page">
+        <section className="auth-promo-panel">
+          <a className="auth-home-button" href="#home" onClick={(event) => { event.preventDefault(); setShowLanding(true); setForcePublicHome(false); setLoginError(""); }}>← Home</a>
+          <div className="auth-promo-copy">
+            <img className="auth-brand-image" src="/images/festflow-brand.png" alt="FestFlow" />
+            <p className="auth-eyebrow">ORGANIZE · COLLECT · MANAGE · CELEBRATE</p>
+            <h2>{isRegistering ? "Start your community journey" : "Every Community. Every Celebration. One Platform."}</h2>
+            <p>Manage festival collections, bring your committee together, and keep every contribution organized in one secure place.</p>
+            <div className="auth-benefit-list">
+              <div><span>♟</span><section><strong>Multiple Festivals</strong><small>For any festival or community event</small></section></div>
+              <div><span>₹</span><section><strong>Easy Collection</strong><small>Record money and material donations</small></section></div>
+              <div><span>✓</span><section><strong>Secure &amp; Private</strong><small>Your community records stay separate</small></section></div>
+              <div><span>▥</span><section><strong>Reports &amp; Insights</strong><small>Keep your records clear and transparent</small></section></div>
+            </div>
+          </div>
+        </section>
+        <form className="login-card auth-form-card" onSubmit={isRegistering ? handleRegister : handleLogin}>
+          <button type="button" className="auth-mobile-home" onClick={() => { setShowLanding(true); setForcePublicHome(false); setLoginError(""); }}>← Home</button>
+          <div className="login-logo">🌺</div>
           <h1>FestFlow</h1>
           <p className="login-subtitle">Every Community. Every Celebration. One Platform.</p>
 
           <label>
-            Email address
+            Username
             <input
-              type="email"
+              type="text"
               autoComplete="username"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
-              placeholder="Enter your registered email"
+              placeholder={isRegistering ? "Choose a unique username" : "Enter your username"}
+              minLength={3}
+              maxLength={30}
+              pattern="[a-zA-Z0-9_]{3,30}"
+              title="Use 3–30 letters, numbers, or underscores."
               required
             />
           </label>
+
+          {isRegistering && (
+            <label>
+              Email address (for password recovery)
+              <input
+                type="email"
+                autoComplete="email"
+                value={registerEmail}
+                onChange={(event) => setRegisterEmail(event.target.value)}
+                placeholder="Enter your email address"
+                required
+              />
+            </label>
+          )}
 
           <label>
             Password
             <input
               type={showPassword ? "text" : "password"}
-              autoComplete="current-password"
+              autoComplete={isRegistering ? "new-password" : "current-password"}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="Enter password"
+              placeholder={isRegistering ? "Create a password (8+ characters)" : "Enter password"}
+              minLength={isRegistering ? 8 : undefined}
               required
             />
           </label>
+
+          {!isRegistering && (
+            <div style={{ textAlign: "right", marginTop: "-4px", marginBottom: "12px" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setRecoveryMode(false);
+                  setRequestRecoveryMode(true);
+                  setRecoveryEmail("");
+                  setRecoveryEmailSent(false);
+                  setLoginError("");
+                  setShowLanding(false);
+                  setForcePublicHome(false);
+                  setIsRegistering(false);
+                }}
+                style={{ border: 0, background: "none", color: "#b33112", cursor: "pointer", fontWeight: 700 }}
+              >
+                Forgot Password?
+              </button>
+            </div>
+          )}
 
           <label className="show-password-label">
             <input
@@ -1054,13 +1660,108 @@ function App() {
           {loginError && <p className="login-error" role="alert">{loginError}</p>}
 
           <button type="submit" className="login-button" disabled={loginLoading}>
-            {loginLoading ? "Signing in…" : "Login"}
+            {loginLoading ? (isRegistering ? "Creating account…" : "Signing in…") : (isRegistering ? "Create Account" : "Login")}
           </button>
 
-          <p className="login-footer">
-            FestFlow Community Collection Management
+          <p style={{ textAlign: "center", marginTop: "16px" }}>
+            {isRegistering ? "Already have an account? " : "New to FestFlow? "}
+            <button
+              type="button"
+              onClick={() => {
+                setIsRegistering(!isRegistering);
+                setLoginError("");
+                setPassword("");
+              }}
+              style={{ border: 0, background: "none", color: "#b33112", cursor: "pointer", fontWeight: 700 }}
+            >
+              {isRegistering ? "Login" : "Create Account"}
+            </button>
           </p>
+
+          <p className="login-footer">FestFlow Community Collection Management</p>
         </form>
+      </main>
+    );
+  }
+
+  if (loggedIn && (!activeCommitteeId || activeScreen === "communities")) {
+    return (
+      <main className="login-page auth-split-page community-auth-page">
+        <section className="auth-promo-panel">
+          <button type="button" className="auth-home-button" onClick={() => { setForcePublicHome(true); setLoginError(""); setCommitteeMessage(""); }}>← Home</button>
+          <div className="auth-promo-copy">
+            <img className="auth-brand-image" src="/images/festflow-brand.png" alt="FestFlow" />
+            <p className="auth-eyebrow">BRING YOUR COMMUNITY TOGETHER</p>
+            <h2>Every celebration starts with a community.</h2>
+            <p>Create a space for your committee or join an existing community with an invitation code.</p>
+            <div className="auth-benefit-list">
+              <div><span>✦</span><section><strong>Create your community</strong><small>Give your committee a shared home</small></section></div>
+              <div><span>↗</span><section><strong>Invite your team</strong><small>Share your invitation code securely</small></section></div>
+              <div><span>₹</span><section><strong>Track contributions</strong><small>Keep collections organized in one place</small></section></div>
+              <div><span>✓</span><section><strong>Stay transparent</strong><small>Review records with your committee</small></section></div>
+            </div>
+          </div>
+        </section>
+        <section className="login-card community-form-card">
+          <button type="button" className="auth-mobile-home" onClick={() => { setForcePublicHome(true); setLoginError(""); setCommitteeMessage(""); }}>← Home</button>
+          <div className="login-logo">🌺</div>
+          <h1>Welcome to FestFlow</h1>
+          <p className="login-subtitle">Create a community or join one with an invitation code.</p>
+          {loginError && <p className="login-error" role="alert">{loginError}</p>}
+          {committeeMessage && <p role="status" style={{ color: "#166534", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "10px 12px", borderRadius: 8 }}>{committeeMessage}</p>}
+          {myCommittees.length > 0 && (
+            <div style={{ textAlign: "left", margin: "20px 0", padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
+              <h3 style={{ marginTop: 0 }}>Your communities</h3>
+              {myCommittees.map((committee) => (
+                <div key={committee.id} style={{ padding: "10px 0", borderBottom: "1px solid #eee" }}>
+                  <strong>{committee.name}</strong>
+                  <p style={{ margin: "6px 0 0", color: "#555" }}>Invitation code: <strong>{committee.invite_code}</strong></p>
+                  <button type="button" className="cancel-button" style={{ marginTop: 10 }} onClick={() => handleCopyInviteCode(committee.invite_code)}>Copy invitation code</button>
+                  <button type="button" className="cancel-button" style={{ marginTop: 10, marginLeft: 8 }} onClick={() => handleShareInvitation(committee)}>Share invitation</button>
+                  <button type="button" className="cancel-button" style={{ marginTop: 10, marginLeft: 8 }} disabled={membersLoading} onClick={() => handleViewCommitteeMembers(committee)}>{membersLoading && membersForCommittee !== committee.id ? "Loading members…" : membersForCommittee === committee.id ? "Hide members" : "View members"}</button>
+                  <button type="button" className="login-button" style={{ marginTop: 10 }} onClick={() => { setActiveCommitteeId(committee.id); setActiveScreen("dashboard"); setLoginError(""); }}>Open this community</button>
+                  {membersForCommittee === committee.id && (
+                    <div style={{ marginTop: 12, padding: 12, background: "#fff7f1", border: "1px solid #fed7aa", borderRadius: 10 }}>
+                      <strong>Community members ({committeeMembers.length})</strong>
+                      {committeeMembers.length === 0 ? <p style={{ marginBottom: 0 }}>No member details were returned.</p> : (
+                        <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>
+                          {committeeMembers.map((member) => (
+                            <li key={member.user_id} style={{ marginBottom: 8 }}>
+                              <span>{member.username || "Member"}{member.is_owner ? " — Owner" : ""}</span>
+                              {!member.is_owner && committeeMembers.some((item) => item.is_owner && item.user_id === currentUserId) && (
+                                <button
+                                  type="button"
+                                  className="cancel-button"
+                                  style={{ marginLeft: 8, padding: "5px 8px", color: "#b91c1c" }}
+                                  disabled={membersLoading}
+                                  onClick={() => handleRemoveCommitteeMember(committee, member)}
+                                >
+                                  {membersLoading ? "Please wait…" : "Remove member"}
+                                </button>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+              <p style={{ fontSize: 13, color: "#666" }}>Open a community to view and manage its shared collection records.</p>
+            </div>
+          )}
+          <form onSubmit={handleCreateCommittee} style={{ textAlign: "left", marginTop: 22 }}>
+            <h3>Create a community</h3>
+            <label>Community name<input value={committeeName} onChange={(e) => setCommitteeName(e.target.value)} placeholder="e.g. Green Park Festival Committee" maxLength={100} required /></label>
+            <button className="login-button" type="submit" disabled={committeeLoading}>{committeeLoading ? "Please wait…" : "Create Community"}</button>
+          </form>
+          <form onSubmit={handleJoinCommittee} style={{ textAlign: "left", marginTop: 24 }}>
+            <h3>Join a community</h3>
+            <label>Invitation code<input value={inviteCode} onChange={(e) => setInviteCode(e.target.value.toUpperCase())} placeholder="Enter invitation code" maxLength={8} required /></label>
+            <button className="login-button" type="submit" disabled={committeeLoading}>{committeeLoading ? "Please wait…" : "Join Community"}</button>
+          </form>
+          <button type="button" onClick={handleLogout} style={{ marginTop: 20, border: 0, background: "none", color: "#b33112", cursor: "pointer" }}>Log out</button>
+        </section>
       </main>
     );
   }
@@ -1074,7 +1775,7 @@ function App() {
     <div className="app-layout">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <span className="sidebar-logo">🎉</span>
+          <span className="sidebar-logo"><img src="/images/festflow-brand.png" alt="FestFlow logo" /></span>
           <div>
             <h2>FestFlow</h2>
             <p>Community Collection Manager</p>
@@ -1129,6 +1830,8 @@ function App() {
           </button>
         </nav>
 
+        <button type="button" onClick={() => { setActiveCommitteeId(""); setActiveScreen("communities"); }} style={{ margin: "12px 16px", padding: "10px 12px", border: "1px solid #f1b99f", borderRadius: 10, background: "#fff7f1", color: "#9b3215", cursor: "pointer" }}>Switch community</button>
+
         <div className="sidebar-bottom">
           <div className="sidebar-user">
             <div className="user-avatar">
@@ -1166,38 +1869,112 @@ function App() {
                 : collectionDetails[activeScreen]?.title || "Dashboard"}
             </h1>
 
-            <p>Every Community. Every Celebration. One Platform.</p>
+            <p>Every Community. Every Celebration. One Platform.{myCommittees.find((c) => c.id === activeCommitteeId) ? ` · ${myCommittees.find((c) => c.id === activeCommitteeId).name}` : ""}</p>
           </div>
 
           <div className="header-date">{getToday()}</div>
         </header>
 
         {activeScreen === "dashboard" && (
-          <section className="dashboard-content reference-dashboard">
-            <div className="reference-welcome">
-              <h2>Welcome, {userRole === "admin" ? "Admin" : "Collector"} 👋</h2>
-              <p>Here's today's collection overview</p>
-            </div>
+          <section className="dashboard-content festflow-dashboard">
             {dataError && <p className="data-error" role="alert">{dataError}</p>}
             {dataLoading && <p className="data-loading">Loading saved collections…</p>}
-            <article className="total-collection-card">
-              <div className="total-icon">💰</div><div><p>Total Collection</p><h2>{formatAmount(moneyTotal + personal1Total + personal2Total)}</h2><small>Across all money collections</small></div><div className="total-bars" aria-hidden="true">▂ ▅ ▇</div>
-            </article>
-            <div className="overview-mini-grid">
-              <article className="mini-card donors-card"><span>👥</span><div><strong>{totalDonors}</strong><small>Total Donors</small></div></article>
-              <article className="mini-card materials-card"><span>📦</span><div><strong>{materialDonations.length}</strong><small>Material Donations</small></div></article>
-            </div>
-            <section className="dashboard-section reference-quick-actions">
-              <h3>Quick Actions</h3>
-              <button className="action-wide action-orange" onClick={() => openAddForm("money")}>＋ Add Money Collection</button>
-              <button className="action-wide action-green" onClick={() => openMaterialForm()}>＋ Add Material Donation</button>
-              <div className="dashboard-shortcuts">
-                <button className="shortcut shortcut-purple" onClick={() => openCollection("personal1")}><span>♡</span><strong>Personal<br/>Collection 1</strong></button>
-                <button className="shortcut shortcut-yellow" onClick={() => openCollection("personal2")}><span>🤝</span><strong>Personal<br/>Collection 2</strong></button>
-                <button className="shortcut shortcut-green" onClick={() => setActiveScreen("money")}><span>▤</span><strong>View<br/>Money</strong></button>
-                <button className="shortcut shortcut-blue" onClick={() => setActiveScreen("reports")}><span>▣</span><strong>View<br/>Reports</strong></button>
+
+            <section className="dashboard-hero">
+              <div className="dashboard-hero-copy">
+                <p className="dashboard-eyebrow">YOUR COMMUNITY AT A GLANCE</p>
+                <h2>Welcome back,<br /><span>{userRole === "admin" ? "Admin" : userRole === "collector" ? "Collector" : username || "Member"}!</span></h2>
+                <p className="dashboard-community-name">
+                  {myCommittees.find((committee) => committee.id === activeCommitteeId)?.name || "Your FestFlow Community"}
+                </p>
+                <div className="dashboard-quote"><span>“</span> Together we organize, collect and celebrate.</div>
+                <div className="dashboard-hero-event dashboard-hero-event-inline">
+                  <span className="dashboard-event-icon">✦</span>
+                  <div><small>COMMUNITY COLLECTIONS</small><strong>Every contribution matters</strong><span>Track donations clearly and transparently.</span></div>
+                </div>
               </div>
             </section>
+
+            <section className="dashboard-metrics-grid" aria-label="Collection summary">
+              <article className="dashboard-metric metric-money">
+                <span className="metric-icon">₹</span>
+                <div><small>Total Collections</small><strong>{formatAmount(moneyTotal + personal1Total + personal2Total)}</strong><span>Across all money collections</span></div>
+              </article>
+              <article className="dashboard-metric metric-donors">
+                <span className="metric-icon">♧</span>
+                <div><small>Unique Donors</small><strong>{uniqueDonorCount}</strong><span>Based on saved donor names</span></div>
+              </article>
+              <article className="dashboard-metric metric-materials">
+                <span className="metric-icon">◇</span>
+                <div><small>Material Donations</small><strong>{materialDonations.length}</strong><span>Saved donation records</span></div>
+              </article>
+              <article className="dashboard-metric metric-records">
+                <span className="metric-icon">▤</span>
+                <div><small>Money Records</small><strong>{allMoneyRecords.length}</strong><span>Main and personal collections</span></div>
+              </article>
+            </section>
+
+            <div className="dashboard-main-grid">
+              <section className="dashboard-panel dashboard-chart-panel">
+                <div className="dashboard-panel-heading">
+                  <div><span className="panel-heading-icon">▥</span><div><h3>Collection Overview</h3><p>Monthly money collections · {new Date().getFullYear()}</p></div></div>
+                  <span className="dashboard-live-label">LIVE DATA</span>
+                </div>
+                <div className="monthly-chart" role="img" aria-label="Monthly collection totals for the current year">
+                  {monthlyTotals.map((item) => (
+                    <div className="monthly-chart-column" key={item.month} title={`${item.month}: ${formatAmount(item.amount)}`}>
+                      <span className="monthly-chart-value">{item.amount > 0 ? formatAmount(item.amount) : ""}</span>
+                      <div className="monthly-chart-track"><div className="monthly-chart-bar" style={{ height: `${Math.max(item.amount > 0 ? 8 : 0, (item.amount / maxMonthlyTotal) * 100)}%` }} /></div>
+                      <small>{item.month}</small>
+                    </div>
+                  ))}
+                </div>
+                <div className="dashboard-chart-footer"><span><i /> Saved collection amounts</span><strong>{formatAmount(moneyTotal + personal1Total + personal2Total)}</strong></div>
+              </section>
+
+              <section className="dashboard-panel dashboard-recent-panel">
+                <div className="dashboard-panel-heading">
+                  <div><span className="panel-heading-icon">◷</span><div><h3>Recent Collections</h3><p>Latest saved money records</p></div></div>
+                  <button className="dashboard-text-link" onClick={() => openCollection("money")}>View all →</button>
+                </div>
+                {recentMoneyRecords.length === 0 ? <div className="dashboard-empty">No money collections yet.<button onClick={() => openAddForm("money")}>Add first collection</button></div> : (
+                  <div className="dashboard-table-wrap"><table className="dashboard-table"><thead><tr><th>Date</th><th>Donor</th><th>Amount</th><th>Mode</th></tr></thead><tbody>
+                    {recentMoneyRecords.map((record) => <tr key={`${record.id}-${record.date}`}><td>{record.date || "—"}</td><td>{record.name}</td><td>{formatAmount(record.amount)}</td><td><span className="payment-pill">{record.paymentMode || "—"}</span></td></tr>)}
+                  </tbody></table></div>
+                )}
+              </section>
+            </div>
+
+            <div className="dashboard-bottom-grid">
+              <section className="dashboard-panel dashboard-material-panel">
+                <div className="dashboard-panel-heading">
+                  <div><span className="panel-heading-icon">◇</span><div><h3>Recent Material Donations</h3><p>Latest donated items</p></div></div>
+                  <button className="dashboard-text-link" onClick={() => setActiveScreen("materials")}>View all →</button>
+                </div>
+                {recentMaterialRecords.length === 0 ? <div className="dashboard-empty">No material donations yet.<button onClick={() => openMaterialForm()}>Add donation</button></div> : (
+                  <div className="dashboard-table-wrap"><table className="dashboard-table"><thead><tr><th>Date</th><th>Item</th><th>Quantity</th><th>Donor</th></tr></thead><tbody>
+                    {recentMaterialRecords.map((record) => <tr key={record.id}><td>{record.date || "—"}</td><td>{record.item}</td><td>{record.quantity} {record.unit}</td><td>{record.donorName}</td></tr>)}
+                  </tbody></table></div>
+                )}
+              </section>
+
+              <section className="dashboard-panel dashboard-top-donors">
+                <div className="dashboard-panel-heading"><div><span className="panel-heading-icon">♛</span><div><h3>Top Donors</h3><p>By total recorded amount</p></div></div></div>
+                {donorTotals.length === 0 ? <p className="dashboard-empty-text">Donor rankings appear after collections are saved.</p> : <ol className="top-donor-list">{donorTotals.map((donor, index) => <li key={donor.name}><span className={`donor-rank rank-${index + 1}`}>{index + 1}</span><strong>{donor.name}</strong><b>{formatAmount(donor.amount)}</b></li>)}</ol>}
+              </section>
+
+              <section className="dashboard-panel dashboard-quick-actions">
+                <div className="dashboard-panel-heading"><div><span className="panel-heading-icon">⚡</span><div><h3>Quick Actions</h3><p>Common tasks</p></div></div></div>
+                <div className="dashboard-action-grid">
+                  <button onClick={() => openAddForm("money")}><span className="action-icon action-icon-money">₹</span><span>Add Money Collection</span><b>›</b></button>
+                  <button onClick={() => openMaterialForm()}><span className="action-icon action-icon-material">◇</span><span>Add Material Donation</span><b>›</b></button>
+                  <button onClick={() => openCollection("personal1")}><span className="action-icon action-icon-personal">①</span><span>Personal Collection 1</span><b>›</b></button>
+                  <button onClick={() => openCollection("personal2")}><span className="action-icon action-icon-personal2">②</span><span>Personal Collection 2</span><b>›</b></button>
+                  <button onClick={() => setActiveScreen("reports")}><span className="action-icon action-icon-reports">▥</span><span>View Reports</span><b>›</b></button>
+                  <button onClick={() => { setActiveCommitteeId(""); setActiveScreen("communities"); }}><span className="action-icon action-icon-community">⚙</span><span>Switch Community</span><b>›</b></button>
+                </div>
+              </section>
+            </div>
           </section>
         )}
 
